@@ -24,6 +24,7 @@ impl Auth for AuthImpl {
         request: Request<RegisterRequest>,
     ) -> Result<Response<RegisterResponse>, Status> {
         println!("Request from {:?}", request.remote_addr());
+        println!("Request: {:?}", request);
 
         let response = RegisterResponse {};
 
