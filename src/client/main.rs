@@ -21,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let response = client
         .register(RegisterRequest {
             user: String::from("guido"),
-            y1: 21,
-            y2: 24,
+            y1: vec![0x01, 0x02, 0x03],
+            y2: vec![0x01, 0x02, 0x03],
         })
         .await?;
 
