@@ -3,10 +3,53 @@ use num_bigint::BigUint;
 use rand::thread_rng;
 use rand::Rng;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Point {
     Scalar(BigUint),
     ECPoint(BigUint, BigUint),
+}
+
+impl Point {
+    /// The serialization of the ECPoint consist of joining both coordinates and
+    /// padding 0s at the begginning of the shortest to make it equal to the
+    /// longest.
+    pub fn serialize(self: &Self) -> Vec<u8> {
+        match self {
+            Point::Scalar(x) => x.to_bytes_be(),
+            Point::ECPoint(x, y) => {
+                let mut x = x.to_bytes_be();
+                let mut y = y.to_bytes_be();
+                let diff = x.len() as i32 - y.len() as i32;
+                if diff > 0 {
+                    y.resize(y.len() + diff as usize, 0);
+                    y.rotate_right(diff as usize);
+                } else {
+                    x.resize(x.len() - (-diff as usize), 0);
+                    x.rotate_right((-diff) as usize);
+                }
+                x.append(&mut y);
+                x
+            }
+        }
+    }
+
+    pub fn deserialize_into_scalar(v: Vec<u8>) -> Point {
+        Point::Scalar(BigUint::from_bytes_be(&v))
+    }
+
+    pub fn deserialize_into_ecpoint(v: Vec<u8>) -> Point {
+        let len = v.len();
+
+        assert!(
+            len % 2 == 0,
+            "The length of the serialized object should be even"
+        );
+
+        Point::ECPoint(
+            BigUint::from_bytes_be(&v[..len / 2]),
+            BigUint::from_bytes_be(&v[len / 2..]),
+        )
+    }
 }
 
 pub fn compute_y(secret: BigUint, g: Point, h: Point, q: &BigUint) -> (Point, Point) {
