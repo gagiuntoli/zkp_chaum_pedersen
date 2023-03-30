@@ -17,6 +17,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("connecting to {}", server_addr);
     let mut client = AuthClient::connect(server_addr).await?;
 
+    // let i = compute_y();
+
     println!("sending register request to {}", server_addr);
     let response = client
         .register(RegisterRequest {
