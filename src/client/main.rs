@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let k = get_random_number::<2>();
     println!("The random K is: {:?}", k);
 
-    let (r1, r2) = compute_new_points(&k, &g, &h, &q);
+    let (r1, r2) = compute_new_points(&k, &g, &h, &p);
 
     let response = client
         .create_authentication_challenge(AuthenticationChallengeRequest {
@@ -57,9 +57,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     println!("Response from Server {:?}", response);
 
-    let c = response.into_inner().c;
+    let response = response.into_inner();
+    let auth_id = response.auth_id;
+    let c = response.c;
     let c = BigUint::from_bytes_be(&c);
     let s = compute_challenge_s(&x, &k, &c, &q);
+    println!("c: {:?} -> s: {:?}", c, s);
+
+    let response = client
+        .verify_authentication(AuthenticationAnswerRequest {
+            auth_id,
+            s: s.to_bytes_be(),
+        })
+        .await?;
+    println!("Response from Server {:?}", response);
 
     Ok(())
 }

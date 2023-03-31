@@ -3,6 +3,13 @@ use num_bigint::BigUint;
 use rand::thread_rng;
 use rand::Rng;
 
+#[derive(Default)]
+pub enum Group {
+    #[default]
+    Scalar,
+    EllipticCurve,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Point {
     Scalar(BigUint),
@@ -47,6 +54,13 @@ impl Point {
         }
     }
 
+    pub fn deserialize(v: Vec<u8>, group: &Group) -> Point {
+        match group {
+            Group::Scalar => Point::deserialize_into_scalar(v),
+            Group::EllipticCurve => Point::deserialize_into_ecpoint(v),
+        }
+    }
+
     pub fn deserialize_into_scalar(v: Vec<u8>) -> Point {
         Point::Scalar(BigUint::from_bytes_be(&v))
     }
@@ -71,15 +85,15 @@ impl Point {
 /// For EC the new ones are: exp * g & exp * h
 pub fn compute_new_points(exp: &BigUint, g: &Point, h: &Point, p: &BigUint) -> (Point, Point) {
     match (g, h) {
-        (Point::Scalar(g), Point::Scalar(h)) => compute_y_scalar(exp, g, h, p),
+        (Point::Scalar(g), Point::Scalar(h)) => compute_new_points_scalar(exp, g, h, p),
         (Point::ECPoint(gx, gy), Point::ECPoint(hx, hy)) => {
-            compute_y_ecpoint(exp, gx, gy, hx, hy, p)
+            compute_new_points_ecpoint(exp, gx, gy, hx, hy, p)
         }
         _ => panic!("g & h should be the same type"),
     }
 }
 
-pub fn compute_y_scalar(
+pub fn compute_new_points_scalar(
     x_secret: &BigUint,
     g: &BigUint,
     h: &BigUint,
@@ -91,7 +105,7 @@ pub fn compute_y_scalar(
     )
 }
 
-pub fn compute_y_ecpoint(
+pub fn compute_new_points_ecpoint(
     x_secret: &BigUint,
     gx: &BigUint,
     gy: &BigUint,
@@ -264,14 +278,14 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_y_scalar() {
+    fn test_compute_new_points_scalar() {
         let q = BigUint::from(10009u32);
         let g = BigUint::from(3u32);
         let h = BigUint::from(2892u32);
 
         let secret = BigUint::from(300u32);
 
-        let (y1, y2) = compute_y_scalar(&secret, &g, &h, &q);
+        let (y1, y2) = compute_new_points_scalar(&secret, &g, &h, &q);
 
         assert_eq!(y1, Point::Scalar(BigUint::from(6419u32)));
         assert_eq!(y2, Point::Scalar(BigUint::from(4984u32)));
