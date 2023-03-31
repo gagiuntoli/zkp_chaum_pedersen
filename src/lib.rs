@@ -1,7 +1,7 @@
 use num::traits::One;
 use num_bigint::BigUint;
 use rand::thread_rng;
-use rand::Rng;
+use rand::{distributions::Alphanumeric, Rng};
 
 #[derive(Default)]
 pub enum Group {
@@ -248,6 +248,14 @@ pub fn get_random_array<const BYTES: usize>() -> [u8; BYTES] {
 
 pub fn get_random_number<const BYTES: usize>() -> BigUint {
     BigUint::from_bytes_be(&get_random_array::<BYTES>())
+}
+
+pub fn get_random_string<const CHARS: usize>() -> String {
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(CHARS)
+        .map(char::from)
+        .collect()
 }
 
 #[cfg(test)]

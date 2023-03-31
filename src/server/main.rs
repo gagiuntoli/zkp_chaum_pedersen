@@ -4,7 +4,9 @@ use std::sync::Mutex;
 use num_bigint::BigUint;
 use num::traits::Zero;
 
-use chaum_pedersen_zkp::{Group, Point, get_random_number, verify, get_scalar_constants};
+use chaum_pedersen_zkp::{
+    Group, Point, get_random_number, verify, get_scalar_constants, get_random_string,
+};
 
 pub mod zkp_auth {
     include!("../zkp_auth.rs");
@@ -28,8 +30,6 @@ pub struct UserInfo {
     pub user: String,
     pub y1: Point,
     pub y2: Point,
-    pub r1: Point,
-    pub r2: Point,
 }
 
 #[derive(Debug, Clone)]
@@ -48,69 +48,20 @@ impl Auth for AuthImpl {
         &self,
         request: Request<RegisterRequest>,
     ) -> Result<Response<RegisterResponse>, Status> {
-        println!("Request: {:?}", request);
-
         let register_request = request.into_inner();
         let response = RegisterResponse {};
 
-        // we add a new UserInfo if the id is new, we update y1 & y2 if `id` already exists.
-        let user_info = match &self.group {
-            Group::Scalar => UserInfo {
-                user: register_request.user.clone(),
-                y1: Point::deserialize_into_scalar(register_request.y1),
-                y2: Point::deserialize_into_scalar(register_request.y2),
-                r1: Point::Scalar(BigUint::zero()),
-                r2: Point::Scalar(BigUint::zero()),
-            },
-            Group::EllipticCurve => UserInfo {
-                user: register_request.user.clone(),
-                y1: Point::deserialize_into_ecpoint(register_request.y1),
-                y2: Point::deserialize_into_ecpoint(register_request.y2),
-                r1: Point::Scalar(BigUint::zero()),
-                r2: Point::Scalar(BigUint::zero()),
-            },
+        // we add a new UserInfo, replace old y1 & y2 if the user was already register.
+        let user_info = UserInfo {
+            user: register_request.user.clone(),
+            y1: Point::deserialize(register_request.y1, &self.group),
+            y2: Point::deserialize(register_request.y2, &self.group),
         };
 
         let user_registry = &mut *self.user_registry.lock().unwrap();
         user_registry.insert(register_request.user, user_info);
 
-        println!("User registry: {:?}", self.user_registry);
-
         Ok(Response::new(response))
-    }
-
-    async fn verify_authentication(
-        &self,
-        request: Request<AuthenticationAnswerRequest>,
-    ) -> Result<Response<AuthenticationAnswerResponse>, Status> {
-        let register_request = request.into_inner();
-
-        let auth_id = register_request.auth_id;
-        let s = register_request.s;
-        let s = BigUint::from_bytes_be(&s);
-
-        let auth_registry = &mut *self.auth_registry.lock().unwrap();
-
-        let (p, q, g, h) = get_scalar_constants();
-
-        if let Some(info) = auth_registry.get(&auth_id) {
-            if verify(
-                &info.r1, &info.r2, &info.y1, &info.y2, &g, &h, &info.c, &s, &p,
-            ) {
-                let response = AuthenticationAnswerResponse {
-                    session_id: String::from("you_solved_the_zkp_challenge_congratulations"),
-                };
-
-                Ok(Response::new(response))
-            } else {
-                return Err(Status::new(
-                    Code::NotFound,
-                    "the challenge was not solved properly",
-                ));
-            }
-        } else {
-            return Err(Status::new(Code::NotFound, "auth_id doesn't exist"));
-        }
     }
 
     async fn create_authentication_challenge(
@@ -127,7 +78,7 @@ impl Auth for AuthImpl {
         let user_registry = &mut *self.user_registry.lock().unwrap();
         let auth_registry = &mut *self.auth_registry.lock().unwrap();
 
-        let auth_id = "aoskasokd".to_string();
+        let auth_id = get_random_string::<10>();
 
         if let Some(user_info) = user_registry.get(&user) {
             let c = get_random_number::<2>();
@@ -154,13 +105,53 @@ impl Auth for AuthImpl {
             return Err(Status::new(Code::NotFound, "user doesn't exist"));
         }
     }
+
+    async fn verify_authentication(
+        &self,
+        request: Request<AuthenticationAnswerRequest>,
+    ) -> Result<Response<AuthenticationAnswerResponse>, Status> {
+        let register_request = request.into_inner();
+
+        let auth_id = register_request.auth_id;
+        let s = register_request.s;
+        let s = BigUint::from_bytes_be(&s);
+
+        let auth_registry = &mut *self.auth_registry.lock().unwrap();
+
+        let (p, q, g, h) = get_scalar_constants();
+
+        if let Some(info) = auth_registry.get(&auth_id) {
+            if verify(
+                &info.r1, &info.r2, &info.y1, &info.y2, &g, &h, &info.c, &s, &p,
+            ) {
+                let response = AuthenticationAnswerResponse {
+                    session_id: get_random_string::<10>(),
+                };
+
+                println!("Successful login for auth_id: {}", auth_id);
+
+                Ok(Response::new(response))
+            } else {
+                println!(
+                    "Error challenge not solved properly by auth_id: {}",
+                    auth_id
+                );
+
+                return Err(Status::new(
+                    Code::NotFound,
+                    "the challenge was not solved properly",
+                ));
+            }
+        } else {
+            return Err(Status::new(Code::NotFound, "auth_id doesn't exist"));
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:50051".parse().unwrap();
     let auth = AuthImpl::default();
-    let registry = HashMap::<String, UserInfo>::new();
 
     println!("Bookstore server listening on {}", addr);
 

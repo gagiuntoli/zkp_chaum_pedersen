@@ -1,18 +1,14 @@
 use num::BigUint;
-use tonic::{transport::Server, Request, Response, Status};
 
 pub mod zkp_auth {
     include!("../zkp_auth.rs");
 }
 
 use zkp_auth::auth_client::AuthClient;
-use zkp_auth::{
-    AuthenticationAnswerRequest, AuthenticationAnswerResponse, AuthenticationChallengeRequest,
-    AuthenticationChallengeResponse, RegisterRequest, RegisterResponse,
-};
+use zkp_auth::{AuthenticationAnswerRequest, AuthenticationChallengeRequest, RegisterRequest};
 
 use chaum_pedersen_zkp::{
-    Point, get_scalar_constants, get_random_number, compute_new_points, compute_challenge_s,
+    get_scalar_constants, get_random_number, compute_new_points, compute_challenge_s,
 };
 
 #[tokio::main]
@@ -30,21 +26,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (y1, y2) = compute_new_points(&x, &g, &h, &p);
 
     // (y1, y2) = (g^x, h^x) secret x
-    println!("sending register request to {}", server_addr);
-    let response = client
+    println!("sending register request");
+
+    let _response = client
         .register(RegisterRequest {
             user: String::from("guido"),
             y1: y1.serialize(),
             y2: y2.serialize(),
         })
         .await?;
-    println!("Response from Server {:?}", response);
 
     // (r1, r2) = (g^k, h^k) random k
     println!("Sending authentication challenge request");
 
     let k = get_random_number::<2>();
-    println!("The random K is: {:?}", k);
 
     let (r1, r2) = compute_new_points(&k, &g, &h, &p);
 
@@ -55,14 +50,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             r2: r2.serialize(),
         })
         .await?;
-    println!("Response from Server {:?}", response);
 
     let response = response.into_inner();
     let auth_id = response.auth_id;
     let c = response.c;
     let c = BigUint::from_bytes_be(&c);
     let s = compute_challenge_s(&x, &k, &c, &q);
-    println!("c: {:?} -> s: {:?}", c, s);
+
+    println!("Sending challenge solution");
 
     let response = client
         .verify_authentication(AuthenticationAnswerRequest {
@@ -70,7 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             s: s.to_bytes_be(),
         })
         .await?;
-    println!("Response from Server {:?}", response);
+
+    println!("Session ID: {:?}", response.into_inner().session_id);
 
     Ok(())
 }
