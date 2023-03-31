@@ -1,8 +1,7 @@
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{transport::Server, Request, Response, Status, Code};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use num_bigint::BigUint;
-use std::cell::RefCell;
 use num::traits::Zero;
 
 use chaum_pedersen_zkp::{Point, get_random_number};
@@ -97,9 +96,18 @@ impl Auth for AuthImpl {
         &self,
         request: Request<AuthenticationChallengeRequest>,
     ) -> Result<Response<AuthenticationChallengeResponse>, Status> {
+        let register_request = request.into_inner();
+
+        let user = register_request.user;
+        let registry = &mut *self.registry.lock().unwrap();
+
+        if !registry.contains_key(&user) {
+            return Err(Status::new(Code::NotFound, "user doesn't exist"));
+        }
+
         let response = AuthenticationChallengeResponse {
             auth_id: String::from("a"),
-            c: get_random_number::<32>().to_bytes_be(),
+            c: get_random_number::<2>().to_bytes_be(),
         };
 
         Ok(Response::new(response))

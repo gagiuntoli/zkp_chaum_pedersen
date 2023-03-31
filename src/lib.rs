@@ -9,9 +9,23 @@ pub enum Point {
     ECPoint(BigUint, BigUint),
 }
 
+const P_SCALAR: [u8; 2] = [0x27, 0x19]; // 10009
+const Q_SCALAR: [u8; 2] = [0x13, 0x8c]; // 5004
+const G_SCALAR: [u8; 2] = [0x00, 0x03]; // 3
+const H_SCALAR: [u8; 2] = [0x0b, 0x4c]; // 2892
+
+pub fn get_scalar_constants() -> (BigUint, BigUint, Point, Point) {
+    (
+        BigUint::from_bytes_be(&P_SCALAR),
+        BigUint::from_bytes_be(&Q_SCALAR),
+        Point::Scalar(BigUint::from_bytes_be(&G_SCALAR)),
+        Point::Scalar(BigUint::from_bytes_be(&H_SCALAR)),
+    )
+}
+
 impl Point {
     /// The serialization of the ECPoint consist of joining both coordinates and
-    /// padding 0s at the begginning of the shortest to make it equal to the
+    /// padding 0s at the beginning of the shortest to make it equal to the
     /// longest.
     pub fn serialize(self: &Self) -> Vec<u8> {
         match self {
@@ -52,11 +66,14 @@ impl Point {
     }
 }
 
-pub fn compute_y(secret: BigUint, g: Point, h: Point, q: &BigUint) -> (Point, Point) {
+/// Computes new points from g & h
+/// For scalar the new ones are: g^exp & h^exp
+/// For EC the new ones are: exp * g & exp * h
+pub fn compute_new_points(exp: &BigUint, g: &Point, h: &Point, p: &BigUint) -> (Point, Point) {
     match (g, h) {
-        (Point::Scalar(g), Point::Scalar(h)) => compute_y_scalar(&secret, &g, &h, &q),
+        (Point::Scalar(g), Point::Scalar(h)) => compute_y_scalar(exp, g, h, p),
         (Point::ECPoint(gx, gy), Point::ECPoint(hx, hy)) => {
-            compute_y_ecpoint(&secret, &gx, &gy, &hx, &hy, &q)
+            compute_y_ecpoint(exp, gx, gy, hx, hy, p)
         }
         _ => panic!("g & h should be the same type"),
     }
@@ -66,11 +83,11 @@ pub fn compute_y_scalar(
     x_secret: &BigUint,
     g: &BigUint,
     h: &BigUint,
-    q: &BigUint,
+    p: &BigUint,
 ) -> (Point, Point) {
     (
-        Point::Scalar(g.modpow(x_secret, q)),
-        Point::Scalar(h.modpow(x_secret, q)),
+        Point::Scalar(g.modpow(x_secret, p)),
+        Point::Scalar(h.modpow(x_secret, p)),
     )
 }
 
@@ -80,7 +97,7 @@ pub fn compute_y_ecpoint(
     gy: &BigUint,
     hx: &BigUint,
     hy: &BigUint,
-    q: &BigUint,
+    p: &BigUint,
 ) -> (Point, Point) {
     todo!()
 }
