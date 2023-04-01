@@ -40,12 +40,12 @@ impl Point {
             Point::ECPoint(x, y) => {
                 let mut x = x.to_bytes_be();
                 let mut y = y.to_bytes_be();
-                let diff = x.len() as i32 - y.len() as i32;
+                let diff = (x.len() as i32) - (y.len() as i32);
                 if diff > 0 {
                     y.resize(y.len() + diff as usize, 0);
                     y.rotate_right(diff as usize);
                 } else {
-                    x.resize(x.len() - (-diff as usize), 0);
+                    x.resize(x.len() + (-diff as usize), 0);
                     x.rotate_right((-diff) as usize);
                 }
                 x.append(&mut y);
@@ -326,72 +326,70 @@ mod tests {
         let q = (&p - BigUint::one()) / BigUint::from(2u32);
 
         let x = BigUint::from(300u32);
-        let g = BigUint::from(3u32);
-        let h = BigUint::from(2892u32);
+        let g = Point::Scalar(BigUint::from(3u32));
+        let h = Point::Scalar(BigUint::from(2892u32));
 
-        let y1 = g.modpow(&x, &p);
-        let y2 = h.modpow(&x, &p);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
 
         let k = BigUint::from(10u32);
-        let r1 = g.modpow(&k, &p);
-        let r2 = h.modpow(&k, &p);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
 
         let c = BigUint::from(894u32);
 
         let s = compute_challenge_s(&x, &k, &c, &q);
 
-        let verification = verify_scalar(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
         assert!(verification)
     }
 
     #[test]
-    fn test_verify_scalar_success_example_2() {
+    fn test_verify_scalar_success_toy_example_2() {
         let p = BigUint::from(23u32);
         let q = BigUint::from(11u32);
 
         let x = BigUint::from(6u32);
-        let g = BigUint::from(4u32);
-        let h = BigUint::from(9u32);
+        let g = Point::Scalar(BigUint::from(4u32));
+        let h = Point::Scalar(BigUint::from(9u32));
 
-        let y1 = g.modpow(&x, &p);
-        let y2 = h.modpow(&x, &p);
-        assert_eq!(y1, BigUint::from(2u32));
-        assert_eq!(y2, BigUint::from(3u32));
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+
+        assert_eq!(y1, Point::Scalar(BigUint::from(2u32)));
+        assert_eq!(y2, Point::Scalar(BigUint::from(3u32)));
 
         let k = BigUint::from(7u32);
-        let r1 = g.modpow(&k, &p);
-        let r2 = h.modpow(&k, &p);
-        assert_eq!(r1, BigUint::from(8u32));
-        assert_eq!(r2, BigUint::from(4u32));
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+
+        assert_eq!(r1, Point::Scalar(BigUint::from(8u32)));
+        assert_eq!(r2, Point::Scalar(BigUint::from(4u32)));
 
         let c = BigUint::from(4u32);
 
         let s = compute_challenge_s(&x, &k, &c, &q);
         assert_eq!(s, BigUint::from(5u32));
 
-        let verification = verify_scalar(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
         assert!(verification)
     }
 
     #[test]
-    fn test_verify_scalar_failure_example_1() {
+    fn test_verify_scalar_failure_toy_example_1() {
         let p = BigUint::from(23u32);
         let q = BigUint::from(11u32);
 
         let x = BigUint::from(6u32);
-        let g = BigUint::from(4u32);
-        let h = BigUint::from(9u32);
 
-        let y1 = g.modpow(&x, &p);
-        let y2 = h.modpow(&x, &p);
-        assert_eq!(y1, BigUint::from(2u32));
-        assert_eq!(y2, BigUint::from(3u32));
+        let g = Point::Scalar(BigUint::from(4u32));
+        let h = Point::Scalar(BigUint::from(9u32));
+
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+        assert_eq!(y1, Point::Scalar(BigUint::from(2u32)));
+        assert_eq!(y2, Point::Scalar(BigUint::from(3u32)));
 
         let k = BigUint::from(7u32);
-        let r1 = g.modpow(&k, &p);
-        let r2 = h.modpow(&k, &p);
-        assert_eq!(r1, BigUint::from(8u32));
-        assert_eq!(r2, BigUint::from(4u32));
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+
+        assert_eq!(r1, Point::Scalar(BigUint::from(8u32)));
+        assert_eq!(r2, Point::Scalar(BigUint::from(4u32)));
 
         let c = BigUint::from(4u32);
 
@@ -400,7 +398,70 @@ mod tests {
         // we compute `s` slightly bad
         s = s - BigUint::one();
 
-        let verification = verify_scalar(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
         assert!(!verification)
+    }
+
+    #[test]
+    fn test_serialize() {
+        let p = Point::Scalar(BigUint::from(65256u32));
+
+        assert_eq!(p.serialize(), vec![0xfe, 0xe8]);
+
+        let p = Point::ECPoint(BigUint::from(65256u32), BigUint::from(8475u32));
+
+        assert_eq!(p.serialize(), vec![0xfe, 0xe8, 0x21, 0x1b]);
+
+        // one array is longer than the other
+        let p = Point::ECPoint(BigUint::from(65256u32), BigUint::from(83957234u32));
+
+        assert_eq!(
+            p.serialize(),
+            vec![0x00, 0x00, 0xfe, 0xe8, 0x05, 0x01, 0x15, 0xf2]
+        );
+
+        // the other way around
+        let p = Point::ECPoint(BigUint::from(83957234u32), BigUint::from(65256u32));
+
+        assert_eq!(
+            p.serialize(),
+            vec![0x05, 0x01, 0x15, 0xf2, 0x00, 0x00, 0xfe, 0xe8]
+        );
+    }
+
+    #[test]
+    fn test_deserialize() {
+        let p = Point::deserialize(vec![0xfe, 0xe8], &Group::Scalar);
+
+        assert_eq!(p, Point::Scalar(BigUint::from(65256u32)));
+
+        let p = Point::deserialize(vec![0xfe, 0xe8, 0x21, 0x1b], &Group::EllipticCurve);
+
+        assert_eq!(
+            p,
+            Point::ECPoint(BigUint::from(65256u32), BigUint::from(8475u32))
+        );
+
+        // one array is longer than the other
+        let p = Point::deserialize(
+            vec![0x00, 0x00, 0xfe, 0xe8, 0x05, 0x01, 0x15, 0xf2],
+            &Group::EllipticCurve,
+        );
+
+        assert_eq!(
+            p,
+            Point::ECPoint(BigUint::from(65256u32), BigUint::from(83957234u32))
+        );
+
+        // the other way around
+        let p = Point::deserialize(
+            vec![0x05, 0x01, 0x15, 0xf2, 0x00, 0x00, 0xfe, 0xe8],
+            &Group::EllipticCurve,
+        );
+
+        assert_eq!(
+            p,
+            Point::ECPoint(BigUint::from(83957234u32), BigUint::from(65256u32))
+        );
     }
 }
