@@ -80,7 +80,7 @@ impl Auth for AuthImpl {
         let user_registry = &mut *self.user_registry.lock().unwrap();
         let auth_registry = &mut *self.auth_registry.lock().unwrap();
 
-        let auth_id = get_random_string::<10>();
+        let auth_id = get_random_string(10);
 
         if let Some(user_info) = user_registry.get(&user) {
             let c = get_random_number::<2>();
@@ -128,7 +128,7 @@ impl Auth for AuthImpl {
                 &info.r1, &info.r2, &info.y1, &info.y2, &g, &h, &info.c, &s, &p,
             ) {
                 let response = AuthenticationAnswerResponse {
-                    session_id: get_random_string::<10>(),
+                    session_id: get_random_string(10),
                 };
 
                 println!("[SERVER] Successful login auth_id: {}\n", auth_id);

@@ -1,7 +1,12 @@
-use num::traits::One;
+mod elliptic_curves;
+mod finite_field;
+mod secp256k1;
+
+use num::traits::{Zero, One};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use rand::{distributions::Alphanumeric, Rng};
+use secp256k1::Secp256k1Point;
 
 #[derive(Default)]
 pub enum Group {
@@ -78,6 +83,13 @@ impl Point {
             BigUint::from_bytes_be(&v[len / 2..]),
         )
     }
+
+    pub fn from_secp256k1(point: &Secp256k1Point) -> Point {
+        match point {
+            Secp256k1Point::Coor { x, y, .. } => Point::ECPoint(x.number.clone(), y.number.clone()),
+            _ => panic!("elliptic_curves::Point::Zero type not supported"),
+        }
+    }
 }
 
 /// Computes new points from g & h
@@ -87,33 +99,48 @@ pub fn compute_new_points(exp: &BigUint, g: &Point, h: &Point, p: &BigUint) -> (
     match (g, h) {
         (Point::Scalar(g), Point::Scalar(h)) => compute_new_points_scalar(exp, g, h, p),
         (Point::ECPoint(gx, gy), Point::ECPoint(hx, hy)) => {
-            compute_new_points_ecpoint(exp, gx, gy, hx, hy, p)
+            compute_new_points_elliptic_curve(exp, gx, gy, hx, hy)
         }
         _ => panic!("g & h should be the same type"),
     }
 }
 
 pub fn compute_new_points_scalar(
-    x_secret: &BigUint,
+    exp: &BigUint,
     g: &BigUint,
     h: &BigUint,
     p: &BigUint,
 ) -> (Point, Point) {
     (
-        Point::Scalar(g.modpow(x_secret, p)),
-        Point::Scalar(h.modpow(x_secret, p)),
+        Point::Scalar(g.modpow(exp, p)),
+        Point::Scalar(h.modpow(exp, p)),
     )
 }
 
-pub fn compute_new_points_ecpoint(
-    x_secret: &BigUint,
+pub fn compute_new_points_elliptic_curve(
+    exp: &BigUint,
     gx: &BigUint,
     gy: &BigUint,
     hx: &BigUint,
     hy: &BigUint,
-    p: &BigUint,
 ) -> (Point, Point) {
-    todo!()
+    let g = Secp256k1Point::from_bigint(&gx, &gy);
+    let h = Secp256k1Point::from_bigint(&hx, &hy);
+
+    let g = g.scale(exp.clone());
+    let h = h.scale(exp.clone());
+
+    let g_new = match g {
+        elliptic_curves::Point::Coor { x, y, .. } => Point::ECPoint(x.number, y.number),
+        _ => panic!("You reach the Zero in elliptic curve multiplication"),
+    };
+
+    let h_new = match h {
+        elliptic_curves::Point::Coor { x, y, .. } => Point::ECPoint(x.number, y.number),
+        _ => panic!("You reach the Zero in elliptic curve multiplication"),
+    };
+
+    (g_new, h_new)
 }
 
 /// This function computes `s` which is the challenge proposed by the verifier.
@@ -131,6 +158,7 @@ pub fn compute_challenge_s(x_secret: &BigUint, k: &BigUint, c: &BigUint, q: &Big
         q - (cx - k).modpow(&BigUint::one(), q)
     }
 }
+
 pub fn verify(
     r1: &Point,
     r2: &Point,
@@ -158,9 +186,7 @@ pub fn verify(
             Point::ECPoint(y2x, y2y),
             Point::ECPoint(gx, gy),
             Point::ECPoint(hx, hy),
-        ) => verify_ecpoint(
-            r1x, r1y, r2x, r2y, y1x, y1y, y2x, y2y, gx, gy, hx, hy, c, s, p,
-        ),
+        ) => verify_ecpoint(r1x, r1y, r2x, r2y, y1x, y1y, y2x, y2y, gx, gy, hx, hy, c, s),
         _ => panic!("g & h should be the same type"),
     }
 }
@@ -228,9 +254,20 @@ pub fn verify_ecpoint(
     hy: &BigUint,
     c: &BigUint,
     s: &BigUint,
-    p: &BigUint,
 ) -> bool {
-    todo!()
+    let g = Secp256k1Point::from_bigint(&gx, &gy);
+    let h = Secp256k1Point::from_bigint(&hx, &hy);
+    let y1 = Secp256k1Point::from_bigint(&y1x, &y1y);
+    let y2 = Secp256k1Point::from_bigint(&y2x, &y2y);
+    let r1 = Secp256k1Point::from_bigint(&r1x, &r1y);
+    let r2 = Secp256k1Point::from_bigint(&r2x, &r2y);
+
+    let sg = g.scale(s.clone());
+    let sh = h.scale(s.clone());
+    let cy1 = y1.scale(c.clone());
+    let cy2 = y2.scale(c.clone());
+
+    (r1 == sg + cy1) && (r2 == sh + cy2)
 }
 
 /// This functions generates a random 256 bits number than can be use as a
@@ -250,10 +287,10 @@ pub fn get_random_number<const BYTES: usize>() -> BigUint {
     BigUint::from_bytes_be(&get_random_array::<BYTES>())
 }
 
-pub fn get_random_string<const CHARS: usize>() -> String {
+pub fn get_random_string(n: usize) -> String {
     rand::thread_rng()
         .sample_iter(&Alphanumeric)
-        .take(CHARS)
+        .take(n)
         .map(char::from)
         .collect()
 }
@@ -287,13 +324,13 @@ mod tests {
 
     #[test]
     fn test_compute_new_points_scalar() {
-        let q = BigUint::from(10009u32);
+        let p = BigUint::from(10009u32);
         let g = BigUint::from(3u32);
         let h = BigUint::from(2892u32);
 
         let secret = BigUint::from(300u32);
 
-        let (y1, y2) = compute_new_points_scalar(&secret, &g, &h, &q);
+        let (y1, y2) = compute_new_points_scalar(&secret, &g, &h, &p);
 
         assert_eq!(y1, Point::Scalar(BigUint::from(6419u32)));
         assert_eq!(y2, Point::Scalar(BigUint::from(4984u32)));
@@ -321,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_scalar_success_example_1() {
+    fn test_verify_scalar_success_toy_example_1() {
         let p = BigUint::from(10009u32);
         let q = (&p - BigUint::one()) / BigUint::from(2u32);
 
@@ -400,6 +437,30 @@ mod tests {
 
         let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
         assert!(!verification)
+    }
+
+    #[test]
+    fn test_verify_elliptic_curve_success_example_1() {
+        let p = Secp256k1Point::prime();
+        let q = Secp256k1Point::n();
+
+        let x = BigUint::from(300u32);
+        let g = Secp256k1Point::generator();
+        let h = g.clone().scale(BigUint::from(13u32));
+
+        let g = Point::from_secp256k1(&g);
+        let h = Point::from_secp256k1(&h);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+
+        let k = BigUint::from(10u32);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+
+        let c = BigUint::from(894u32);
+
+        let s = compute_challenge_s(&x, &k, &c, &q);
+
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        assert!(verification)
     }
 
     #[test]
