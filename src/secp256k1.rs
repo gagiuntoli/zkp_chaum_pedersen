@@ -1,3 +1,6 @@
+/// This code is a copy of one library that I was developing for didactic purposes based on the book Programming Bitcoin.
+/// The code is not very well documented and the library is still on development.
+/// This is the original source code: https://github.com/gagiuntoli/bitcoin_rust
 use hex;
 use num::{Integer, One, Zero};
 use num_bigint::{BigInt, BigUint, ToBigInt};

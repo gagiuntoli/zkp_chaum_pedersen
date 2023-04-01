@@ -1,8 +1,6 @@
 /// The code for implementing the Rust types by reading the protocol description
 /// was taken from:
 /// https://betterprogramming.pub/building-a-grpc-server-with-rust-be2c52f0860e
-///
-// use std::{env, path::PathBuf};
 
 fn main() {
     let proto_file = "./proto/zkp_auth.proto";
