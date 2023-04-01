@@ -24,7 +24,7 @@ library, `src/secp256k1.rs` is included in the code and is a copy and paste from
 one of my projects [4] based on the Programming Bitcoin book from Jimmy Song.
 
 ```
-p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+p = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f
 q = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 g = (
     x:0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
@@ -71,13 +71,13 @@ client since both produce some output which can be useful for debugging.
 Execute the server:
 
 ```bash
-cargo run --bin server [--scalar(default)|--elliptic]
+cargo run --bin server -- [--scalar(default)|--elliptic]
 ```
 
 Execute the client:
 
 ```bash
-cargo run --bin client [--scalar(default)|--elliptic]
+cargo run --bin client -- [--scalar(default)|--elliptic]
 ```
 
 Note that both, the server and the client, should run the same algorithm, i.e,
@@ -89,14 +89,14 @@ You will need `docker` and `docker-compose`. In one terminal inside the main fol
 
 Build the docker image and run the server in one terminal:
 
-```
+```bash
 docker-compose run --rm zpkserver
 root@<...>:/zpk-app# cargo run --bin server
 ```
 
 On another terminal search for the docker image and connect with an interactive terminal:
 
-```
+```bash
 docker compose images
 docker exec -it chaum-pedersen-zkp_zpkserver_run_<...> /bin/bash
 root@<...>:/zpk-app# cargo run --bin client
@@ -111,7 +111,7 @@ solutions and use the elliptic curve or integer cyclic groups.
 
 Output from the client side:
 
-```
+```bash
 root@68204f9d2567:/zpk-app# cargo run --bin client
     Finished dev [unoptimized + debuginfo] target(s) in 0.06s
      Running `target/debug/client`
@@ -143,7 +143,7 @@ No
 
 Output from the server side (for the same previous execution):
 
-```
+```bash
 root@68204f9d2567:/zpk-app# cargo run --bin server
     Finished dev [unoptimized + debuginfo] target(s) in 0.06s
      Running `target/debug/server`

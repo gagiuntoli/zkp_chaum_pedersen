@@ -11,8 +11,8 @@ use zkp_auth::auth_client::AuthClient;
 use zkp_auth::{AuthenticationAnswerRequest, AuthenticationChallengeRequest, RegisterRequest};
 
 use chaum_pedersen_zkp::{
-    parse_group_from_command_line, get_constants, get_random_number, compute_new_points,
-    compute_challenge_s,
+    parse_group_from_command_line, get_constants, get_random_number, exponentiates_points,
+    solve_zk_challenge_s,
 };
 
 #[tokio::main]
@@ -32,10 +32,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (p, q, g, h) = get_constants(&group);
 
     'main_loop: loop {
-        let x = get_random_number::<2>();
+        let x = get_random_number();
         println!("Your new password is: {:?}", x);
 
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
+        let (y1, y2) = exponentiates_points(&x, &g, &h, &p).unwrap();
 
         println!("Enter your name to register");
 
@@ -68,9 +68,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // (r1, r2) = (g^k, h^k) random k
         println!("Sending authentication challenge request");
 
-        let k = get_random_number::<2>();
+        let k = get_random_number();
 
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
+        let (r1, r2) = exponentiates_points(&k, &g, &h, &p).unwrap();
 
         let server_response = client
             .create_authentication_challenge(AuthenticationChallengeRequest {
@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let c = response.c;
         let c = BigUint::from_bytes_be(&c);
-        let mut s = compute_challenge_s(&x, &k, &c, &q);
+        let mut s = solve_zk_challenge_s(&x, &k, &c, &q);
 
         if !solve_challenge_right {
             s += BigUint::one();

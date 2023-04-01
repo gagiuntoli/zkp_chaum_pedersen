@@ -86,7 +86,7 @@ impl Auth for AuthImpl {
         let auth_id = get_random_string(10);
 
         if let Some(user_info) = user_registry.get(&user) {
-            let c = get_random_number::<2>();
+            let c = get_random_number();
 
             auth_registry.insert(
                 auth_id.clone(),

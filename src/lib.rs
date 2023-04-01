@@ -2,15 +2,35 @@ mod secp256k1;
 
 use num::traits::One;
 use num_bigint::BigUint;
-use rand::thread_rng;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{thread_rng, distributions::Alphanumeric, Rng};
 use secp256k1::Secp256k1Point;
 
+/// The possible kind of errors returned by this library.
 #[derive(Debug)]
 pub enum Error {
     InvalidArguments,
 }
 
+/// An enum use to select from the beginning of the program execution which
+/// cyclic group is going to be used.
+#[derive(Debug, Default)]
+pub enum Group {
+    #[default]
+    Scalar,
+    EllipticCurve,
+}
+
+/// Structure to represent the cyclic group field.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Point {
+    Scalar(BigUint),
+    ECPoint(BigUint, BigUint),
+}
+
+/// Detects if any argument is --scalar or --elliptic and returns the
+/// corresponding cyclic group to use.
+///
+/// * `args` - Vector of command line arguments.
 pub fn parse_group_from_command_line(args: Vec<String>) -> Group {
     match args.len() {
         2 => match args[1].trim() {
@@ -22,27 +42,18 @@ pub fn parse_group_from_command_line(args: Vec<String>) -> Group {
     }
 }
 
-#[derive(Debug, Default)]
-pub enum Group {
-    #[default]
-    Scalar,
-    EllipticCurve,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Point {
-    Scalar(BigUint),
-    ECPoint(BigUint, BigUint),
-}
-
+/// Returns the default constants to use in both server and clients. Note that
+/// they should be the same for both for the ZK algorithm to work.
+///
+/// * `group` - The cyclic group to use.
 pub fn get_constants(group: &Group) -> (BigUint, BigUint, Point, Point) {
     match group {
-        Group::Scalar => get_scalar_constants(),
-        Group::EllipticCurve => get_elliptic_curve_constants(),
+        Group::Scalar => get_constants_scalar(),
+        Group::EllipticCurve => get_constants_elliptic_curve(),
     }
 }
 
-pub fn get_scalar_constants() -> (BigUint, BigUint, Point, Point) {
+pub fn get_constants_scalar() -> (BigUint, BigUint, Point, Point) {
     (
         BigUint::from(10009u32),
         BigUint::from(5004u32),
@@ -51,7 +62,7 @@ pub fn get_scalar_constants() -> (BigUint, BigUint, Point, Point) {
     )
 }
 
-pub fn get_elliptic_curve_constants() -> (BigUint, BigUint, Point, Point) {
+pub fn get_constants_elliptic_curve() -> (BigUint, BigUint, Point, Point) {
     let g = Secp256k1Point::generator();
     let h = g.clone().scale(BigUint::from(13u32));
     (
@@ -63,9 +74,8 @@ pub fn get_elliptic_curve_constants() -> (BigUint, BigUint, Point, Point) {
 }
 
 impl Point {
-    /// The serialization of the ECPoint consist of joining both coordinates and
-    /// padding 0s at the beginning of the shortest to make it equal to the
-    /// longest.
+    /// Serializes the Point structure to an array of bytes to transferring it
+    /// through the network.
     pub fn serialize(self: &Self) -> Vec<u8> {
         match self {
             Point::Scalar(x) => x.to_bytes_be(),
@@ -86,6 +96,8 @@ impl Point {
         }
     }
 
+    /// Deserializes the Point structure from an array of bytes and transforms
+    /// it into an actual Point structure.
     pub fn deserialize(v: Vec<u8>, group: &Group) -> Point {
         match group {
             Group::Scalar => Point::deserialize_into_scalar(v),
@@ -111,6 +123,7 @@ impl Point {
         )
     }
 
+    /// Converts a point from the `secp256k1` library into a Point
     pub fn from_secp256k1(point: &Secp256k1Point) -> Point {
         match point {
             Secp256k1Point::Coor { x, y, .. } => Point::ECPoint(x.number.clone(), y.number.clone()),
@@ -119,25 +132,25 @@ impl Point {
     }
 }
 
-/// Computes new points from g & h
-/// For scalar the new ones are: g^exp & h^exp
-/// For EC the new ones are: exp * g & exp * h
-pub fn compute_new_points(
+/// Exponenciates two points g & h:
+///  - For the integer or scalar group the new ones are: g^exp & h^exp
+///  - For the elliptic curve group the new ones are: exp * g & exp * h
+pub fn exponentiates_points(
     exp: &BigUint,
     g: &Point,
     h: &Point,
     p: &BigUint,
 ) -> Result<(Point, Point), Error> {
     match (g, h) {
-        (Point::Scalar(g), Point::Scalar(h)) => Ok(compute_new_points_scalar(exp, g, h, p)),
+        (Point::Scalar(g), Point::Scalar(h)) => Ok(exponentiates_points_scalar(exp, g, h, p)),
         (Point::ECPoint(gx, gy), Point::ECPoint(hx, hy)) => {
-            Ok(compute_new_points_elliptic_curve(exp, gx, gy, hx, hy))
+            Ok(exponentiates_points_elliptic_curve(exp, gx, gy, hx, hy))
         }
         _ => Err(Error::InvalidArguments),
     }
 }
 
-pub fn compute_new_points_scalar(
+pub fn exponentiates_points_scalar(
     exp: &BigUint,
     g: &BigUint,
     h: &BigUint,
@@ -149,7 +162,7 @@ pub fn compute_new_points_scalar(
     )
 }
 
-pub fn compute_new_points_elliptic_curve(
+pub fn exponentiates_points_elliptic_curve(
     exp: &BigUint,
     gx: &BigUint,
     gy: &BigUint,
@@ -175,14 +188,15 @@ pub fn compute_new_points_elliptic_curve(
     (g_new, h_new)
 }
 
-/// This function computes `s` which is the challenge proposed by the verifier.
-/// s = k - cx mod q
+/// This function solves the ZK challenge `s` proposed by the verifier.
+///
+/// s = (k - c * x) mod q
 ///
 /// * `x_secret` - secret password.
 /// * `k` - random number selected by the prover.
 /// * `c` - random number selected by the verifier.
-/// * `q` - a prime number that divides p - 1 evenly.
-pub fn compute_challenge_s(x_secret: &BigUint, k: &BigUint, c: &BigUint, q: &BigUint) -> BigUint {
+/// * `q` - the order of the cyclic group
+pub fn solve_zk_challenge_s(x_secret: &BigUint, k: &BigUint, c: &BigUint, q: &BigUint) -> BigUint {
     let cx = c * x_secret;
     if *k > cx {
         (k - cx).modpow(&BigUint::one(), q)
@@ -304,8 +318,7 @@ pub fn verify_ecpoint(
     (r1 == sg + cy1) && (r2 == sh + cy2)
 }
 
-/// This functions generates a random 256 bits number than can be use as a
-/// secret.
+/// Generates a random array of bytes which can be use as a secret.
 ///
 /// Warning: Don't use it for production purposes. Better pseudo random
 /// generators should be used.
@@ -317,10 +330,15 @@ pub fn get_random_array<const BYTES: usize>() -> [u8; BYTES] {
     return arr;
 }
 
-pub fn get_random_number<const BYTES: usize>() -> BigUint {
-    BigUint::from_bytes_be(&get_random_array::<BYTES>())
+/// Generates a 32-bytes random number
+///
+/// Warning: Don't use it for production purposes.
+pub fn get_random_number() -> BigUint {
+    BigUint::from_bytes_be(&get_random_array::<32>())
 }
 
+/// Generates a random string of any length. It is useful to generates user or
+/// session IDs.
 pub fn get_random_string(n: usize) -> String {
     rand::thread_rng()
         .sample_iter(&Alphanumeric)
@@ -347,31 +365,31 @@ mod tests {
 
     #[test]
     fn test_get_random_number() {
-        let a = get_random_number::<32>();
-        let b = get_random_number::<32>();
-        let c = get_random_number::<32>();
-        let d = get_random_number::<32>();
+        let a = get_random_number();
+        let b = get_random_number();
+        let c = get_random_number();
+        let d = get_random_number();
         assert_ne!(a, b);
         assert_ne!(b, c);
         assert_ne!(c, d);
     }
 
     #[test]
-    fn test_compute_new_points_scalar() {
+    fn test_exponentiates_points_scalar() {
         let p = BigUint::from(10009u32);
         let g = BigUint::from(3u32);
         let h = BigUint::from(2892u32);
 
         let secret = BigUint::from(300u32);
 
-        let (y1, y2) = compute_new_points_scalar(&secret, &g, &h, &p);
+        let (y1, y2) = exponentiates_points_scalar(&secret, &g, &h, &p);
 
         assert_eq!(y1, Point::Scalar(BigUint::from(6419u32)));
         assert_eq!(y2, Point::Scalar(BigUint::from(4984u32)));
     }
 
     #[test]
-    fn test_compute_challenge_s() {
+    fn test_solve_zk_challenge_s() {
         // test positive k - cx
         let x = BigUint::from(3u32);
         let c = BigUint::from(3u32);
@@ -379,7 +397,7 @@ mod tests {
         let q = BigUint::from(10u32);
 
         // s = 10 - 3 * 3 mod 10 = 1
-        assert_eq!(compute_challenge_s(&x, &k, &c, &q), BigUint::one());
+        assert_eq!(solve_zk_challenge_s(&x, &k, &c, &q), BigUint::one());
 
         // test negative k - cx
         let x = BigUint::from(4u32);
@@ -388,7 +406,7 @@ mod tests {
         let q = BigUint::from(10u32);
 
         // s = 10 - 3 * 4 mod 10 = 8
-        assert_eq!(compute_challenge_s(&x, &k, &c, &q), BigUint::from(8u32));
+        assert_eq!(solve_zk_challenge_s(&x, &k, &c, &q), BigUint::from(8u32));
     }
 
     #[test]
@@ -400,14 +418,14 @@ mod tests {
         let g = Point::Scalar(BigUint::from(3u32));
         let h = Point::Scalar(BigUint::from(2892u32));
 
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
+        let (y1, y2) = exponentiates_points(&x, &g, &h, &p).unwrap();
 
         let k = BigUint::from(10u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
+        let (r1, r2) = exponentiates_points(&k, &g, &h, &p).unwrap();
 
         let c = BigUint::from(894u32);
 
-        let s = compute_challenge_s(&x, &k, &c, &q);
+        let s = solve_zk_challenge_s(&x, &k, &c, &q);
 
         let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(verification)
@@ -422,20 +440,20 @@ mod tests {
         let g = Point::Scalar(BigUint::from(4u32));
         let h = Point::Scalar(BigUint::from(9u32));
 
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
+        let (y1, y2) = exponentiates_points(&x, &g, &h, &p).unwrap();
 
         assert_eq!(y1, Point::Scalar(BigUint::from(2u32)));
         assert_eq!(y2, Point::Scalar(BigUint::from(3u32)));
 
         let k = BigUint::from(7u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
+        let (r1, r2) = exponentiates_points(&k, &g, &h, &p).unwrap();
 
         assert_eq!(r1, Point::Scalar(BigUint::from(8u32)));
         assert_eq!(r2, Point::Scalar(BigUint::from(4u32)));
 
         let c = BigUint::from(4u32);
 
-        let s = compute_challenge_s(&x, &k, &c, &q);
+        let s = solve_zk_challenge_s(&x, &k, &c, &q);
         assert_eq!(s, BigUint::from(5u32));
 
         let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
@@ -452,19 +470,19 @@ mod tests {
         let g = Point::Scalar(BigUint::from(4u32));
         let h = Point::Scalar(BigUint::from(9u32));
 
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
+        let (y1, y2) = exponentiates_points(&x, &g, &h, &p).unwrap();
         assert_eq!(y1, Point::Scalar(BigUint::from(2u32)));
         assert_eq!(y2, Point::Scalar(BigUint::from(3u32)));
 
         let k = BigUint::from(7u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
+        let (r1, r2) = exponentiates_points(&k, &g, &h, &p).unwrap();
 
         assert_eq!(r1, Point::Scalar(BigUint::from(8u32)));
         assert_eq!(r2, Point::Scalar(BigUint::from(4u32)));
 
         let c = BigUint::from(4u32);
 
-        let mut s = compute_challenge_s(&x, &k, &c, &q);
+        let mut s = solve_zk_challenge_s(&x, &k, &c, &q);
 
         // we compute `s` slightly bad
         s = s - BigUint::one();
@@ -484,14 +502,14 @@ mod tests {
 
         let g = Point::from_secp256k1(&g);
         let h = Point::from_secp256k1(&h);
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
+        let (y1, y2) = exponentiates_points(&x, &g, &h, &p).unwrap();
 
         let k = BigUint::from(10u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
+        let (r1, r2) = exponentiates_points(&k, &g, &h, &p).unwrap();
 
         let c = BigUint::from(894u32);
 
-        let s = compute_challenge_s(&x, &k, &c, &q);
+        let s = solve_zk_challenge_s(&x, &k, &c, &q);
 
         let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(verification)
@@ -508,14 +526,14 @@ mod tests {
 
         let g = Point::from_secp256k1(&g);
         let h = Point::from_secp256k1(&h);
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
+        let (y1, y2) = exponentiates_points(&x, &g, &h, &p).unwrap();
 
         let k = BigUint::from(10u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
+        let (r1, r2) = exponentiates_points(&k, &g, &h, &p).unwrap();
 
         let c = BigUint::from(894u32);
 
-        let s = compute_challenge_s(&x, &k, &c, &q) + BigUint::one();
+        let s = solve_zk_challenge_s(&x, &k, &c, &q) + BigUint::one();
 
         let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(!verification)
