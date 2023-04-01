@@ -41,6 +41,7 @@ pub struct AuthInfo {
     pub r1: Point,
     pub r2: Point,
     pub c: BigUint,
+    pub session_id: String,
 }
 
 #[tonic::async_trait]
@@ -96,6 +97,7 @@ impl Auth for AuthImpl {
                     r1,
                     r2,
                     c: c.clone(),
+                    session_id: String::new(),
                 },
             );
 
@@ -125,27 +127,44 @@ impl Auth for AuthImpl {
 
         let (p, _, g, h) = get_constants(&self.group);
 
-        if let Some(info) = auth_registry.get(&auth_id) {
-            if verify(
+        if let Some(info) = auth_registry.get_mut(&auth_id) {
+            match verify(
                 &info.r1, &info.r2, &info.y1, &info.y2, &g, &h, &info.c, &s, &p,
             ) {
-                let response = AuthenticationAnswerResponse {
-                    session_id: get_random_string(10),
-                };
+                Ok(verification) => {
+                    if verification {
+                        let session_id = get_random_string(10);
+                        info.session_id = session_id.clone();
 
-                println!("[SERVER] Successful login auth_id: {}\n", auth_id);
+                        let response = AuthenticationAnswerResponse {
+                            session_id: session_id.clone(),
+                        };
 
-                Ok(Response::new(response))
-            } else {
-                println!(
-                    "[SERVER] Error challenge not solved properly by auth_id: {}\n",
-                    auth_id
-                );
+                        println!("[SERVER] Successful login auth_id: {}\n", auth_id);
+                        Ok(Response::new(response))
+                    } else {
+                        println!(
+                            "[SERVER] Error challenge not solved properly auth_id: {}\n",
+                            auth_id
+                        );
 
-                return Err(Status::new(
-                    Code::NotFound,
-                    "(Server): the challenge was not solved properly",
-                ));
+                        return Err(Status::new(
+                            Code::NotFound,
+                            "(Server): the challenge not solved properly",
+                        ));
+                    }
+                }
+                Err(error) => {
+                    println!(
+                        "[SERVER] algorithm error during verification: {:?}\n",
+                        error
+                    );
+
+                    return Err(Status::new(
+                        Code::NotFound,
+                        "(Server): algorithm error during verification",
+                    ));
+                }
             }
         } else {
             println!("[SERVER] auth_id {} not found", auth_id);

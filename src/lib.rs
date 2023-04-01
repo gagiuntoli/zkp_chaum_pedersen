@@ -8,6 +8,11 @@ use rand::thread_rng;
 use rand::{distributions::Alphanumeric, Rng};
 use secp256k1::Secp256k1Point;
 
+#[derive(Debug)]
+pub enum Error {
+    InvalidArguments,
+}
+
 pub fn parse_group_from_command_line(args: Vec<String>) -> Group {
     match args.len() {
         2 => match args[1].trim() {
@@ -32,11 +37,6 @@ pub enum Point {
     ECPoint(BigUint, BigUint),
 }
 
-const P_SCALAR: [u8; 2] = [0x27, 0x19]; // 10009
-const Q_SCALAR: [u8; 2] = [0x13, 0x8c]; // 5004
-const G_SCALAR: [u8; 2] = [0x00, 0x03]; // 3
-const H_SCALAR: [u8; 2] = [0x0b, 0x4c]; // 2892
-
 pub fn get_constants(group: &Group) -> (BigUint, BigUint, Point, Point) {
     match group {
         Group::Scalar => get_scalar_constants(),
@@ -46,10 +46,10 @@ pub fn get_constants(group: &Group) -> (BigUint, BigUint, Point, Point) {
 
 pub fn get_scalar_constants() -> (BigUint, BigUint, Point, Point) {
     (
-        BigUint::from_bytes_be(&P_SCALAR),
-        BigUint::from_bytes_be(&Q_SCALAR),
-        Point::Scalar(BigUint::from_bytes_be(&G_SCALAR)),
-        Point::Scalar(BigUint::from_bytes_be(&H_SCALAR)),
+        BigUint::from(10009u32),
+        BigUint::from(5004u32),
+        Point::Scalar(BigUint::from(3u32)),
+        Point::Scalar(BigUint::from(2892u32)),
     )
 }
 
@@ -116,7 +116,7 @@ impl Point {
     pub fn from_secp256k1(point: &Secp256k1Point) -> Point {
         match point {
             Secp256k1Point::Coor { x, y, .. } => Point::ECPoint(x.number.clone(), y.number.clone()),
-            _ => panic!("elliptic_curves::Point::Zero type not supported"),
+            _ => panic!("elliptic_curves::Point::Zero not convertible into a point"),
         }
     }
 }
@@ -124,13 +124,18 @@ impl Point {
 /// Computes new points from g & h
 /// For scalar the new ones are: g^exp & h^exp
 /// For EC the new ones are: exp * g & exp * h
-pub fn compute_new_points(exp: &BigUint, g: &Point, h: &Point, p: &BigUint) -> (Point, Point) {
+pub fn compute_new_points(
+    exp: &BigUint,
+    g: &Point,
+    h: &Point,
+    p: &BigUint,
+) -> Result<(Point, Point), Error> {
     match (g, h) {
-        (Point::Scalar(g), Point::Scalar(h)) => compute_new_points_scalar(exp, g, h, p),
+        (Point::Scalar(g), Point::Scalar(h)) => Ok(compute_new_points_scalar(exp, g, h, p)),
         (Point::ECPoint(gx, gy), Point::ECPoint(hx, hy)) => {
-            compute_new_points_elliptic_curve(exp, gx, gy, hx, hy)
+            Ok(compute_new_points_elliptic_curve(exp, gx, gy, hx, hy))
         }
-        _ => panic!("g & h should be the same type"),
+        _ => Err(Error::InvalidArguments),
     }
 }
 
@@ -198,7 +203,7 @@ pub fn verify(
     c: &BigUint,
     s: &BigUint,
     p: &BigUint,
-) -> bool {
+) -> Result<bool, Error> {
     match (r1, r2, y1, y2, g, h) {
         (
             Point::Scalar(r1),
@@ -207,7 +212,7 @@ pub fn verify(
             Point::Scalar(y2),
             Point::Scalar(g),
             Point::Scalar(h),
-        ) => verify_scalar(r1, r2, y1, y2, g, h, c, s, p),
+        ) => Ok(verify_scalar(r1, r2, y1, y2, g, h, c, s, p)),
         (
             Point::ECPoint(r1x, r1y),
             Point::ECPoint(r2x, r2y),
@@ -215,8 +220,10 @@ pub fn verify(
             Point::ECPoint(y2x, y2y),
             Point::ECPoint(gx, gy),
             Point::ECPoint(hx, hy),
-        ) => verify_ecpoint(r1x, r1y, r2x, r2y, y1x, y1y, y2x, y2y, gx, gy, hx, hy, c, s),
-        _ => panic!("g & h should be the same type"),
+        ) => Ok(verify_ecpoint(
+            r1x, r1y, r2x, r2y, y1x, y1y, y2x, y2y, gx, gy, hx, hy, c, s,
+        )),
+        _ => Err(Error::InvalidArguments),
     }
 }
 
@@ -395,16 +402,16 @@ mod tests {
         let g = Point::Scalar(BigUint::from(3u32));
         let h = Point::Scalar(BigUint::from(2892u32));
 
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
 
         let k = BigUint::from(10u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
 
         let c = BigUint::from(894u32);
 
         let s = compute_challenge_s(&x, &k, &c, &q);
 
-        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(verification)
     }
 
@@ -417,13 +424,13 @@ mod tests {
         let g = Point::Scalar(BigUint::from(4u32));
         let h = Point::Scalar(BigUint::from(9u32));
 
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
 
         assert_eq!(y1, Point::Scalar(BigUint::from(2u32)));
         assert_eq!(y2, Point::Scalar(BigUint::from(3u32)));
 
         let k = BigUint::from(7u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
 
         assert_eq!(r1, Point::Scalar(BigUint::from(8u32)));
         assert_eq!(r2, Point::Scalar(BigUint::from(4u32)));
@@ -433,7 +440,7 @@ mod tests {
         let s = compute_challenge_s(&x, &k, &c, &q);
         assert_eq!(s, BigUint::from(5u32));
 
-        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(verification)
     }
 
@@ -447,7 +454,7 @@ mod tests {
         let g = Point::Scalar(BigUint::from(4u32));
         let h = Point::Scalar(BigUint::from(9u32));
 
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
         assert_eq!(y1, Point::Scalar(BigUint::from(2u32)));
         assert_eq!(y2, Point::Scalar(BigUint::from(3u32)));
 
@@ -464,7 +471,7 @@ mod tests {
         // we compute `s` slightly bad
         s = s - BigUint::one();
 
-        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(!verification)
     }
 
@@ -479,16 +486,16 @@ mod tests {
 
         let g = Point::from_secp256k1(&g);
         let h = Point::from_secp256k1(&h);
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
 
         let k = BigUint::from(10u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
 
         let c = BigUint::from(894u32);
 
-        let s = compute_challenge_s(&x, &k, &c, &q);
+        let s = compute_challenge_s(&x, &k, &c, &q).unwrap();
 
-        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(verification)
     }
 
@@ -503,16 +510,16 @@ mod tests {
 
         let g = Point::from_secp256k1(&g);
         let h = Point::from_secp256k1(&h);
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
 
         let k = BigUint::from(10u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
 
         let c = BigUint::from(894u32);
 
         let s = compute_challenge_s(&x, &k, &c, &q) + BigUint::one();
 
-        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(!verification)
     }
 

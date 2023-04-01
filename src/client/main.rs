@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let x = get_random_number::<2>();
         println!("Your new password is: {:?}", x);
 
-        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p).unwrap();
 
         println!("Enter your name to register");
 
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let k = get_random_number::<2>();
 
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
 
         let server_response = client
             .create_authentication_challenge(AuthenticationChallengeRequest {
@@ -90,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("Solving challenge, would you like to solve it right?\nIf `no` we add 1 to the solution which is wrong and see what happens [Y/n]");
 
-        let mut solve_challenge_right = true;
+        let solve_challenge_right;
 
         'option_loop: loop {
             let mut stdin_string = String::new();
@@ -117,6 +117,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let response = server_response?.into_inner();
         let auth_id = response.auth_id;
+        println!("[CLIENT] Auth ID received: {}", auth_id);
+
         let c = response.c;
         let c = BigUint::from_bytes_be(&c);
         let mut s = compute_challenge_s(&x, &k, &c, &q);
@@ -125,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             s += BigUint::one();
         }
 
-        println!("Sending challenge solution");
+        println!("[CLIENT] Solve and send challenge solution");
 
         let server_response = client
             .verify_authentication(AuthenticationAnswerRequest {
@@ -149,6 +151,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-
-    Ok(())
 }
