@@ -457,7 +457,7 @@ mod tests {
         assert_eq!(y2, Point::Scalar(BigUint::from(3u32)));
 
         let k = BigUint::from(7u32);
-        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p).unwrap();
 
         assert_eq!(r1, Point::Scalar(BigUint::from(8u32)));
         assert_eq!(r2, Point::Scalar(BigUint::from(4u32)));
@@ -491,7 +491,7 @@ mod tests {
 
         let c = BigUint::from(894u32);
 
-        let s = compute_challenge_s(&x, &k, &c, &q).unwrap();
+        let s = compute_challenge_s(&x, &k, &c, &q);
 
         let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p).unwrap();
         assert!(verification)
