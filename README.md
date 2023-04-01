@@ -50,7 +50,7 @@ h ^ q mod p = 1
 If you have all the dependencies installed run in the main directory:
 
 ```bash
-cargo build --release
+$ cargo build --release
 ```
 
 Note that this should generate on the `./src` folder a file called
@@ -60,7 +60,7 @@ Note that this should generate on the `./src` folder a file called
 Test that everything works fine:
 
 ```bash
-cargo test
+$ cargo test
 ```
 
 # Run the code locally
@@ -71,13 +71,13 @@ client since both produce some output which can be useful for debugging.
 Execute the server:
 
 ```bash
-cargo run --bin server -- [--scalar(default)|--elliptic]
+$ cargo run --bin server -- [--scalar(default)|--elliptic]
 ```
 
 Execute the client:
 
 ```bash
-cargo run --bin client -- [--scalar(default)|--elliptic]
+$ cargo run --bin client -- [--scalar(default)|--elliptic]
 ```
 
 Note that both, the server and the client, should run the same algorithm, i.e,
@@ -90,15 +90,19 @@ You will need `docker` and `docker-compose`. In one terminal inside the main fol
 Build the docker image and run the server in one terminal:
 
 ```bash
-docker-compose run --rm zpkserver
+$ docker-compose run --rm zpkserver
 root@<...>:/zpk-app# cargo run --bin server
 ```
 
 On another terminal search for the docker image and connect with an interactive terminal:
 
 ```bash
+$ docker compose images
 docker compose images
-docker exec -it chaum-pedersen-zkp_zpkserver_run_<...> /bin/bash
+Container                                       Repository                     Tag                 Image Id            Size
+chaum-pedersen-zkp_zpkserver_run_<...>          chaum-pedersen-zkp-zpkserver   latest              <...>               <..>GB
+
+$ docker exec -it chaum-pedersen-zkp_zpkserver_run_<...> /bin/bash
 root@<...>:/zpk-app# cargo run --bin client
 ```
 
