@@ -2,9 +2,11 @@ use tonic::{transport::Server, Request, Response, Status, Code};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use num_bigint::BigUint;
+use std::env;
 
 use chaum_pedersen_zkp::{
-    Group, Point, get_random_number, verify, get_scalar_constants, get_random_string,
+    Group, Point, parse_group_from_command_line, get_random_number, verify, get_constants,
+    get_random_string,
 };
 
 pub mod zkp_auth {
@@ -121,7 +123,7 @@ impl Auth for AuthImpl {
 
         let auth_registry = &mut *self.auth_registry.lock().unwrap();
 
-        let (p, _, g, h) = get_scalar_constants();
+        let (p, _, g, h) = get_constants(&self.group);
 
         if let Some(info) = auth_registry.get(&auth_id) {
             if verify(
@@ -155,9 +157,15 @@ impl Auth for AuthImpl {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:50051".parse().unwrap();
-    let auth = AuthImpl::default();
+    let mut auth = AuthImpl::default();
 
-    println!("Bookstore server listening on {}", addr);
+    let args: Vec<String> = env::args().collect();
+    auth.group = parse_group_from_command_line(args);
+
+    println!(
+        "Bookstore server listening on {} ZKP: {:?}",
+        addr, auth.group
+    );
 
     Server::builder()
         .add_service(AuthServer::new(auth))

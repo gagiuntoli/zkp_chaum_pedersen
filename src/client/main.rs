@@ -1,6 +1,7 @@
 use num::BigUint;
 use num::traits::One;
 use std::io::{stdin, stdout, Write};
+use std::env;
 
 pub mod zkp_auth {
     include!("../zkp_auth.rs");
@@ -10,17 +11,25 @@ use zkp_auth::auth_client::AuthClient;
 use zkp_auth::{AuthenticationAnswerRequest, AuthenticationChallengeRequest, RegisterRequest};
 
 use chaum_pedersen_zkp::{
-    get_scalar_constants, get_random_number, compute_new_points, compute_challenge_s,
+    parse_group_from_command_line, get_constants, get_random_number, compute_new_points,
+    compute_challenge_s,
 };
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    let group = parse_group_from_command_line(args);
+
     let server_addr = "http://127.0.0.1:50051";
 
-    println!("connecting to {}", server_addr);
+    println!(
+        "Running client connecting to {} ZKP: {:?}",
+        server_addr, group
+    );
+
     let mut client = AuthClient::connect(server_addr).await?;
 
-    let (p, q, g, h) = get_scalar_constants();
+    let (p, q, g, h) = get_constants(&group);
 
     'main_loop: loop {
         let x = get_random_number::<2>();

@@ -2,13 +2,24 @@ mod elliptic_curves;
 mod finite_field;
 mod secp256k1;
 
-use num::traits::{Zero, One};
+use num::traits::One;
 use num_bigint::BigUint;
 use rand::thread_rng;
 use rand::{distributions::Alphanumeric, Rng};
 use secp256k1::Secp256k1Point;
 
-#[derive(Default)]
+pub fn parse_group_from_command_line(args: Vec<String>) -> Group {
+    match args.len() {
+        2 => match args[1].trim() {
+            "--elliptic" => Group::EllipticCurve,
+            "--scalar" | "" => Group::Scalar,
+            _ => panic!("Invalid argument [--scalar(default)|--elliptic] available."),
+        },
+        _ => Group::Scalar,
+    }
+}
+
+#[derive(Debug, Default)]
 pub enum Group {
     #[default]
     Scalar,
@@ -26,12 +37,30 @@ const Q_SCALAR: [u8; 2] = [0x13, 0x8c]; // 5004
 const G_SCALAR: [u8; 2] = [0x00, 0x03]; // 3
 const H_SCALAR: [u8; 2] = [0x0b, 0x4c]; // 2892
 
+pub fn get_constants(group: &Group) -> (BigUint, BigUint, Point, Point) {
+    match group {
+        Group::Scalar => get_scalar_constants(),
+        Group::EllipticCurve => get_elliptic_curve_constants(),
+    }
+}
+
 pub fn get_scalar_constants() -> (BigUint, BigUint, Point, Point) {
     (
         BigUint::from_bytes_be(&P_SCALAR),
         BigUint::from_bytes_be(&Q_SCALAR),
         Point::Scalar(BigUint::from_bytes_be(&G_SCALAR)),
         Point::Scalar(BigUint::from_bytes_be(&H_SCALAR)),
+    )
+}
+
+pub fn get_elliptic_curve_constants() -> (BigUint, BigUint, Point, Point) {
+    let g = Secp256k1Point::generator();
+    let h = g.clone().scale(BigUint::from(13u32));
+    (
+        Secp256k1Point::prime(),
+        Secp256k1Point::n(),
+        Point::from_secp256k1(&g),
+        Point::from_secp256k1(&h),
     )
 }
 
@@ -461,6 +490,30 @@ mod tests {
 
         let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
         assert!(verification)
+    }
+
+    #[test]
+    fn test_verify_elliptic_curve_failure_example_1() {
+        let p = Secp256k1Point::prime();
+        let q = Secp256k1Point::n();
+
+        let x = BigUint::from(300u32);
+        let g = Secp256k1Point::generator();
+        let h = g.clone().scale(BigUint::from(13u32));
+
+        let g = Point::from_secp256k1(&g);
+        let h = Point::from_secp256k1(&h);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+
+        let k = BigUint::from(10u32);
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+
+        let c = BigUint::from(894u32);
+
+        let s = compute_challenge_s(&x, &k, &c, &q) + BigUint::one();
+
+        let verification = verify(&r1, &r2, &y1, &y2, &g, &h, &c, &s, &p);
+        assert!(!verification)
     }
 
     #[test]
