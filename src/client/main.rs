@@ -1,4 +1,6 @@
 use num::BigUint;
+use num::traits::One;
+use std::io::{stdin, stdout, Write};
 
 pub mod zkp_auth {
     include!("../zkp_auth.rs");
@@ -20,53 +22,124 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (p, q, g, h) = get_scalar_constants();
 
-    let x = get_random_number::<2>();
-    println!("My secret is: {:?}", x);
+    'main_loop: loop {
+        let x = get_random_number::<2>();
+        println!("Your new password is: {:?}", x);
 
-    let (y1, y2) = compute_new_points(&x, &g, &h, &p);
+        let (y1, y2) = compute_new_points(&x, &g, &h, &p);
 
-    // (y1, y2) = (g^x, h^x) secret x
-    println!("sending register request");
+        println!("Enter your name to register");
 
-    let _response = client
-        .register(RegisterRequest {
-            user: String::from("guido"),
-            y1: y1.serialize(),
-            y2: y2.serialize(),
-        })
-        .await?;
+        let mut stdin_string = String::new();
+        let _ = stdout().flush();
+        stdin()
+            .read_line(&mut stdin_string)
+            .expect("Did not enter a correct string");
+        let user_name = stdin_string.trim().to_string();
 
-    // (r1, r2) = (g^k, h^k) random k
-    println!("Sending authentication challenge request");
+        // (y1, y2) = (g^x, h^x) secret x
+        println!("sending register request");
 
-    let k = get_random_number::<2>();
+        let server_response = client
+            .register(RegisterRequest {
+                user: user_name.clone(),
+                y1: y1.serialize(),
+                y2: y2.serialize(),
+            })
+            .await;
 
-    let (r1, r2) = compute_new_points(&k, &g, &h, &p);
+        if let Err(registration_response) = &server_response {
+            println!(
+                "[CLIENT] Error occurred during registration: {:?}",
+                registration_response.message()
+            );
+            continue 'main_loop;
+        }
 
-    let response = client
-        .create_authentication_challenge(AuthenticationChallengeRequest {
-            user: String::from("guido"),
-            r1: r1.serialize(),
-            r2: r2.serialize(),
-        })
-        .await?;
+        // (r1, r2) = (g^k, h^k) random k
+        println!("Sending authentication challenge request");
 
-    let response = response.into_inner();
-    let auth_id = response.auth_id;
-    let c = response.c;
-    let c = BigUint::from_bytes_be(&c);
-    let s = compute_challenge_s(&x, &k, &c, &q);
+        let k = get_random_number::<2>();
 
-    println!("Sending challenge solution");
+        let (r1, r2) = compute_new_points(&k, &g, &h, &p);
 
-    let response = client
-        .verify_authentication(AuthenticationAnswerRequest {
-            auth_id,
-            s: s.to_bytes_be(),
-        })
-        .await?;
+        let server_response = client
+            .create_authentication_challenge(AuthenticationChallengeRequest {
+                user: user_name,
+                r1: r1.serialize(),
+                r2: r2.serialize(),
+            })
+            .await;
 
-    println!("Session ID: {:?}", response.into_inner().session_id);
+        if let Err(registration_response) = &server_response {
+            println!(
+                "[CLIENT] Error occurred during challenge request: {:?}",
+                registration_response.message()
+            );
+            continue 'main_loop;
+        }
+
+        println!("Solving challenge, would you like to solve it right?\nIf `no` we add 1 to the solution which is wrong and see what happens [Y/n]");
+
+        let mut solve_challenge_right = true;
+
+        'option_loop: loop {
+            let mut stdin_string = String::new();
+            let _ = stdout().flush();
+            stdin()
+                .read_line(&mut stdin_string)
+                .expect("Did not enter a correct string");
+
+            match stdin_string.trim() {
+                "y" | "Y" | "yes" | "Yes" | "" => {
+                    solve_challenge_right = true;
+                    break 'option_loop;
+                }
+                "n" | "N" | "no" | "No" => {
+                    solve_challenge_right = false;
+                    break 'option_loop;
+                }
+                _ => {
+                    println!("Entered option should be yes or no: (y, Y, yes, Yes, n, N, no, No or simply `Enter`)");
+                    continue 'option_loop;
+                }
+            }
+        }
+
+        let response = server_response?.into_inner();
+        let auth_id = response.auth_id;
+        let c = response.c;
+        let c = BigUint::from_bytes_be(&c);
+        let mut s = compute_challenge_s(&x, &k, &c, &q);
+
+        if !solve_challenge_right {
+            s += BigUint::one();
+        }
+
+        println!("Sending challenge solution");
+
+        let server_response = client
+            .verify_authentication(AuthenticationAnswerRequest {
+                auth_id,
+                s: s.to_bytes_be(),
+            })
+            .await;
+
+        match server_response {
+            Ok(auth_response) => {
+                println!(
+                    "[CLIENT] Session ID: {:?}\n",
+                    auth_response.into_inner().session_id
+                )
+            }
+            Err(auth_response) => {
+                println!(
+                    "[CLIENT] Error occurred (server response): {:?}\n",
+                    auth_response.message()
+                )
+            }
+        }
+    }
 
     Ok(())
 }

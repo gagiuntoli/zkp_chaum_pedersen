@@ -2,7 +2,6 @@ use tonic::{transport::Server, Request, Response, Status, Code};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use num_bigint::BigUint;
-use num::traits::Zero;
 
 use chaum_pedersen_zkp::{
     Group, Point, get_random_number, verify, get_scalar_constants, get_random_string,
@@ -51,9 +50,12 @@ impl Auth for AuthImpl {
         let register_request = request.into_inner();
         let response = RegisterResponse {};
 
+        let user_name = register_request.user.clone();
+        println!("[SERVER] Registering user: {}", user_name);
+
         // we add a new UserInfo, replace old y1 & y2 if the user was already register.
         let user_info = UserInfo {
-            user: register_request.user.clone(),
+            user: user_name,
             y1: Point::deserialize(register_request.y1, &self.group),
             y2: Point::deserialize(register_request.y2, &self.group),
         };
@@ -102,7 +104,8 @@ impl Auth for AuthImpl {
 
             Ok(Response::new(response))
         } else {
-            return Err(Status::new(Code::NotFound, "user doesn't exist"));
+            println!("[SERVER] User {} not found\n", user);
+            return Err(Status::new(Code::NotFound, "(Server) User not found"));
         }
     }
 
@@ -118,7 +121,7 @@ impl Auth for AuthImpl {
 
         let auth_registry = &mut *self.auth_registry.lock().unwrap();
 
-        let (p, q, g, h) = get_scalar_constants();
+        let (p, _, g, h) = get_scalar_constants();
 
         if let Some(info) = auth_registry.get(&auth_id) {
             if verify(
@@ -128,21 +131,22 @@ impl Auth for AuthImpl {
                     session_id: get_random_string::<10>(),
                 };
 
-                println!("Successful login for auth_id: {}", auth_id);
+                println!("[SERVER] Successful login auth_id: {}\n", auth_id);
 
                 Ok(Response::new(response))
             } else {
                 println!(
-                    "Error challenge not solved properly by auth_id: {}",
+                    "[SERVER] Error challenge not solved properly by auth_id: {}\n",
                     auth_id
                 );
 
                 return Err(Status::new(
                     Code::NotFound,
-                    "the challenge was not solved properly",
+                    "(Server): the challenge was not solved properly",
                 ));
             }
         } else {
+            println!("[SERVER] auth_id {} not found", auth_id);
             return Err(Status::new(Code::NotFound, "auth_id doesn't exist"));
         }
     }
