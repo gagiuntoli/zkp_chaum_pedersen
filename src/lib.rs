@@ -1,5 +1,3 @@
-mod elliptic_curves;
-mod finite_field;
 mod secp256k1;
 
 use num::traits::One;
@@ -165,12 +163,12 @@ pub fn compute_new_points_elliptic_curve(
     let h = h.scale(exp.clone());
 
     let g_new = match g {
-        elliptic_curves::Point::Coor { x, y, .. } => Point::ECPoint(x.number, y.number),
+        secp256k1::Point::Coor { x, y, .. } => Point::ECPoint(x.number, y.number),
         _ => panic!("You reach the Zero in elliptic curve multiplication"),
     };
 
     let h_new = match h {
-        elliptic_curves::Point::Coor { x, y, .. } => Point::ECPoint(x.number, y.number),
+        secp256k1::Point::Coor { x, y, .. } => Point::ECPoint(x.number, y.number),
         _ => panic!("You reach the Zero in elliptic curve multiplication"),
     };
 
