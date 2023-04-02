@@ -1,12 +1,12 @@
-use tonic::{transport::Server, Request, Response, Status, Code};
-use std::collections::HashMap;
-use std::sync::Mutex;
 use num_bigint::BigUint;
+use std::collections::HashMap;
 use std::env;
+use std::sync::Mutex;
+use tonic::{transport::Server, Code, Request, Response, Status};
 
 use chaum_pedersen_zkp::{
-    Group, Point, parse_group_from_command_line, get_random_number, verify, get_constants,
-    get_random_string,
+    get_constants, get_random_number, get_random_string, parse_group_from_command_line, verify,
+    Group, Point,
 };
 
 pub mod zkp_auth {
@@ -144,13 +144,13 @@ impl Auth for AuthImpl {
                         Ok(Response::new(response))
                     } else {
                         println!(
-                            "[SERVER] Error challenge not solved properly auth_id: {}\n",
+                            "[SERVER] Error: challenge not solved properly auth_id: {}\n",
                             auth_id
                         );
 
                         return Err(Status::new(
                             Code::NotFound,
-                            "(Server): the challenge not solved properly",
+                            "(Server): challenge not solved properly",
                         ));
                     }
                 }

@@ -10,5 +10,4 @@ COPY . .
 RUN apt update
 RUN apt-get -y install cmake
 
-# Build the application in release mode
-RUN cargo build --release
+RUN cargo build --bin server --bin client --release
